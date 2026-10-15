@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Music Key & Chord Progression Finder</title>
+<script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-900 text-gray-100 min-h-screen p-4">
+<div class="max-w-3xl mx-auto">
+  <h1 class="text-2xl font-bold text-center mb-2 text-blue-400">Music Key & Chord Finder</h1>
+  <p class="text-center text-gray-400 text-sm mb-6">Select a key to see diatonic chords and progressions</p>
+
+  <div class="grid grid-cols-2 gap-3 mb-6">
+    <div>
+      <label for="keyRoot" class="block text-xs text-gray-400 mb-1">Root Note</label>
+      <select id="keyRoot" class="w-full bg-gray-800 border border-gray-600 rounded px-3 py-2">
+        <option>C</option><option>C#/Db</option><option>D</option><option>D#/Eb</option>
+        <option>E</option><option>F</option><option>F#/Gb</option><option>G</option>
+        <option>G#/Ab</option><option>A</option><option>A#/Bb</option><option>B</option>
+      </select>
+    </div>
+    <div>
+      <label for="keyMode" class="block text-xs text-gray-400 mb-1">Mode</label>
+      <select id="keyMode" class="w-full bg-gray-800 border border-gray-600 rounded px-3 py-2">
+        <option value="major">Major (Ionian)</option>
+        <option value="minor">Natural Minor (Aeolian)</option>
+        <option value="dorian">Dorian</option>
+        <option value="mixolydian">Mixolydian</option>
+      </select>
+    </div>
+  </div>
+
+  <div id="diatonicChords" class="mb-6"></div>
+  <div id="chordDetail" class="bg-gray-800 rounded p-4 mb-4 hidden"></div>
+  <div id="progressions" class="bg-gray-800 rounded p-4"></div>
+</div>
+
+<script>
+const NOTES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+const MODES = {
+  major:      [0,2,4,5,7,9,11],
+  minor:      [0,2,3,5,7,8,10],
+  dorian:     [0,2,3,5,7,9,10],
+  mixolydian: [0,2,4,5,7,9,10],
+};
+const CHORD_TYPES = {
+  major:      ['M','m','m','M','M','m','dim'],
+  minor:      ['m','dim','M','m','m','M','M'],
+  dorian:     ['m','m','M','M','m','dim','M'],
+  mixolydian: ['M','m','dim','M','m','m','M'],
+};
+const ROMAN = ['I','II','III','IV','V','VI','VII'];
+const ROMAN_MINOR = ['i','ii','iii','iv','v','vi','vii'];
+
+function getChordName(root, type) {
+  const n = NOTES[root % 12];
+  return type === 'M' ? n : type === 'm' ? n + 'm' : n + 'dim';
+}
+
+function getScaleNotes(rootIdx, intervals) {
+  return intervals.map(i => NOTES[(rootIdx + i) % 12]);
+}
+
+const GUITAR_SHAPES = {
+  'C':  [[0,3,2,0,1,0], 'x32010'],
+  'Cm': [[0,3,5,5,4,3], 'x35543'],
+  'D':  [[0,0,0,2,3,2], 'xx0232'],
+  'Dm': [[0,0,0,2,3,1], 'xx0231'],
+  'E':  [[0,2,2,1,0,0], '022100'],
+  'Em': [[0,2,2,0,0,0], '022000'],
+  'F':  [[1,1,2,3,3,1], '133211'],
+  'Fm': [[1,3,3,1,1,1], '133111'],
+  'G':  [[3,2,0,0,0,3], '320003'],
+  'Gm': [[3,5,5,3,3,3], '355333'],
+  'A':  [[0,0,2,2,2,0], 'x02220'],
+  'Am': [[0,0,2,2,1,0], 'x02210'],
+  'B':  [[2,2,4,4,4,2], 'x24442'],
+  'Bm': [[2,2,4,4,3,2], 'x24432'],
+  'Gdim': [[-1,2,3,2,-1,-1], 'x2302x'],
+  'Cdim': [[-1,3,4,3,-1,-1], 'x3443x'],
+};
+
+const COMMON_PROGRESSIONS = {
+  major: [
+    { name: 'I–IV–V–I (Classic)', roman: ['I','IV','V','I'] },
+    { name: 'I–V–vi–IV (Pop)', roman: ['I','V','vi','IV'] },
+    { name: 'I–IV–vi–V (Rock)', roman: ['I','IV','vi','V'] },
+    { name: 'ii–V–I (Jazz)', roman: ['II','V','I','I'] },
+  ],
+  minor: [
+    { name: 'i–VII–VI–VII (Rock)', roman: ['i','VII','VI','VII'] },
+    { name: 'i–iv–v–i (Minor Classic)', roman: ['i','iv','v','i'] },
+    { name: 'i–VI–III–VII (Neo-Soul)', roman: ['i','VI','III','VII'] },
+  ],
+  dorian: [
+    { name: 'i–IV–i–IV (Dorian Groove)', roman: ['i','IV','i','IV'] },
+  ],
+  mixolydian: [
+    { name: 'I–VII–IV–I (Rock)', roman: ['I','VII','IV','I'] },
+  ],
+};
+
+function build() {
+  const rootName = document.getElementById('keyRoot').value.split('/')[0];
+  const rootIdx = NOTES.indexOf(rootName);
+  const mode = document.getElementById('keyMode').value;
+  const intervals = MODES[mode];
+  const types = CHORD_TYPES[mode];
+  const isMinor = mode !== 'major';
+
+  const scaleNotes = getScaleNotes(rootIdx, intervals);
+
+  // Diatonic chords
+  const chords = scaleNotes.map((n, i) => {
+    const root = (rootIdx + intervals[i]) % 12;
+    const type = types[i];
+    return { name: getChordName(root, type), type, roman: isMinor ? ROMAN_MINOR[i] : ROMAN[i], root };
+  });
+
+  const colorsM = ['bg-red-700','bg-orange-700','bg-yellow-700','bg-green-700','bg-blue-700','bg-purple-700','bg-gray-600'];
+  document.getElementById('diatonicChords').innerHTML = `
+    <h2 class="text-sm font-semibold text-yellow-400 mb-2">${rootName} ${mode.charAt(0).toUpperCase()+mode.slice(1)} — Diatonic Chords</h2>
+    <div class="grid grid-cols-7 gap-1">
+      ${chords.map((c, i) => `
+        <button onclick="showChord(${i})" class="${colorsM[i]} hover:brightness-125 rounded p-2 text-center transition-all" aria-label="Show chord ${c.name}">
+          <div class="text-xs text-gray-300">${c.roman}</div>
+          <div class="text-sm font-bold">${c.name}</div>
+          <div class="text-xs text-gray-400">${c.type === 'M' ? 'maj' : c.type === 'm' ? 'min' : 'dim'}</div>
+        </button>
+      `).join('')}
+    </div>
+  `;
+
+  // Store for click handler
+  window._currentChords = chords;
+  window._currentRootName = rootName;
+  window._currentMode = mode;
+
+  renderProgressions(chords, mode, rootName);
+}
+
+function showChord(i) {
+  const chord = window._currentChords[i];
+  const shape = GUITAR_SHAPES[chord.name] || GUITAR_SHAPES[chord.name.replace('m','').replace('dim','')];
+  const div = document.getElementById('chordDetail');
+  div.classList.remove('hidden');
+
+  // Draw guitar chord diagram
+  const svgSize = 120;
+  const strings = 6, frets = 5;
+  const fretW = 16, fretH = 16, marginX = 20, marginY = 20;
+
+  let svgDots = '';
+  if (shape) {
+    shape[0].forEach((fret, str) => {
+      if (fret < 0) {
+        svgDots += `<text x="${marginX + (5-str)*fretW}" y="${marginY - 5}" text-anchor="middle" font-size="10" fill="#ef4444">×</text>`;
+      } else if (fret === 0) {
+        svgDots += `<circle cx="${marginX + (5-str)*fretW}" cy="${marginY - 5}" r="4" fill="none" stroke="#9ca3af" stroke-width="1.5"/>`;
+      } else {
+        const cy = marginY + (fret - 0.5) * fretH;
+        svgDots += `<circle cx="${marginX + (5-str)*fretW}" cy="${cy}" r="7" fill="#3b82f6"/>`;
+      }
+    });
+  }
+
+  const svgGrid = `<svg width="${svgSize}" height="${svgSize}" aria-label="Guitar chord diagram for ${chord.name}">
+    ${Array.from({length: strings}, (_, i) => `<line x1="${marginX + i*fretW}" y1="${marginY}" x2="${marginX + i*fretW}" y2="${marginY + frets*fretH}" stroke="#4b5563" stroke-width="1.5"/>`).join('')}
+    ${Array.from({length: frets+1}, (_, i) => `<line x1="${marginX}" y1="${marginY + i*fretH}" x2="${marginX + (strings-1)*fretW}" y2="${marginY + i*fretH}" stroke="#4b5563" stroke-width="${i===0?3:1.5}"/>`).join('')}
+    ${svgDots}
+    <text x="${marginX + (strings-1)*fretW/2}" y="${marginY + frets*fretH + 18}" text-anchor="middle" font-size="10" fill="#9ca3af">${shape ? shape[1] : 'N/A'}</text>
+  </svg>`;
+
+  div.innerHTML = `
+    <div class="flex gap-4 items-start">
+      <div>${svgGrid}</div>
+      <div>
+        <div class="text-xl font-bold text-blue-300 mb-1">${chord.name} (${chord.roman})</div>
+        <div class="text-xs text-gray-400 mb-2">${chord.type === 'M' ? 'Major triad' : chord.type === 'm' ? 'Minor triad' : 'Diminished triad'}</div>
+        <div class="text-xs text-gray-500">Use in progressions like ${chord.roman}–V–I or I–IV–${chord.roman}</div>
+      </div>
+    </div>
+  `;
+}
+
+function renderProgressions(chords, mode, root) {
+  const progs = COMMON_PROGRESSIONS[mode] || [];
+  const div = document.getElementById('progressions');
+  div.innerHTML = `<h2 class="text-sm font-semibold text-purple-400 mb-2">Common Progressions in ${root} ${mode}</h2>
+    <div class="space-y-2">
+      ${progs.map(p => `
+        <div class="bg-gray-700 rounded p-2">
+          <div class="text-xs text-gray-400 mb-1">${p.name}</div>
+          <div class="flex gap-1 flex-wrap">
+            ${p.roman.map(r => {
+              const ci = ROMAN.indexOf(r) !== -1 ? ROMAN.indexOf(r) : ROMAN_MINOR.indexOf(r);
+              const c = ci >= 0 && chords[ci] ? chords[ci].name : r;
+              return `<span class="bg-gray-600 px-2 py-1 rounded text-xs font-bold">${c} <span class="text-gray-400">(${r})</span></span>`;
+            }).join('')}
+          </div>
+        </div>
+      `).join('')}
+    </div>`;
+}
+
+document.getElementById('keyRoot').onchange = build;
+document.getElementById('keyMode').onchange = build;
+build();
+</script>
+</body>
+</html>
